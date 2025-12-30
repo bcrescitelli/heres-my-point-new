@@ -46,7 +46,7 @@ import {
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : {
-      apiKey: "", 
+      apiKey: "AIzaSyDWQWZdm-tGIQ1kxZLqr9gcAA4EY85MXx8", 
       authDomain: "heres-my-point.firebaseapp.com",
       projectId: "heres-my-point",
       storageBucket: "heres-my-point.firebasestorage.app",
@@ -59,7 +59,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const AUDIO_FILE_COUNT = 8; 
+const AUDIO_FILE_COUNT = 5; 
 const MAX_HECKLES = 6;
 const HECKLE_CHAR_LIMIT = 20;
 
@@ -456,7 +456,7 @@ function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpe
   return (
     <div className="min-h-screen bg-indigo-950 text-white flex flex-col font-sans overflow-hidden select-none">
       <div className="p-6 md:p-8 bg-indigo-900/80 backdrop-blur-md flex justify-between items-center border-b-4 border-black/20 shadow-2xl relative z-20 shrink-0">
-        <h1 className="text-3xl md:text-4xl font-black italic text-yellow-400 tracking-tighter uppercase shrink-0">Here's My Point!</h1>
+        <h1 className="text-3xl md:text-4xl font-black italic text-yellow-400 tracking-tighter uppercase shrink-0">HERE'S MY POINT!</h1>
         <div className="flex items-center gap-4 md:gap-6 overflow-hidden">
           <div className="px-4 md:px-6 py-2 bg-indigo-950 rounded-full border-2 border-indigo-700 shadow-inner shrink-0 flex items-center">
             <span className="text-indigo-400 font-bold uppercase text-[10px] mr-2 tracking-widest hidden sm:inline">Room Code:</span>
@@ -716,7 +716,7 @@ function PlayerView({ room, players, user, joinRoom, startSpeaking, stopSpeaking
   return (
     <div className="min-h-[100dvh] bg-indigo-950 text-white flex flex-col font-sans touch-none select-none overflow-hidden max-w-full">
        <div className="p-4 bg-indigo-900 flex justify-between items-center border-b-2 border-black/20 shadow-md shrink-0">
-          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center text-indigo-950 font-black">{me?.name?.charAt(0) || '?'}</div><span className="font-black uppercase text-sm truncate max-w-[100px] uppercase">{me?.name}</span></div>
+          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center text-indigo-950 font-black shadow-inner">{me?.name?.charAt(0) || '?'}</div><span className="font-black uppercase text-sm truncate max-w-[100px] uppercase">{me?.name}</span></div>
           <div className="flex gap-4">
              <div className="text-right leading-none border-r border-white/10 pr-4"><p className="text-[10px] uppercase font-black text-indigo-400 mb-1">Ammo</p><div className="flex gap-1">{[...Array(MAX_HECKLES)].map((_, i) => (<div key={i} className={`w-1.5 h-3 rounded-full ${i < (me?.hecklesLeft || 0) ? 'bg-red-500' : 'bg-indigo-950 opacity-30'}`} />))}</div></div>
              <div className="text-right leading-none"><p className="text-[10px] uppercase font-black text-indigo-400 mb-1">Score</p><p className="text-lg font-black text-yellow-400 tabular-nums">{me?.score || 0}</p></div>
@@ -724,7 +724,7 @@ function PlayerView({ room, players, user, joinRoom, startSpeaking, stopSpeaking
        </div>
 
        <div className="flex-1 flex flex-col p-6 overflow-y-auto">
-          {room.status === 'LOBBY' && <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6"><Users className="w-20 h-20 text-indigo-400 animate-pulse" /><h2 className="text-4xl font-black uppercase italic tracking-tighter">Connected!</h2><p className="text-indigo-300 font-bold uppercase text-[10px] tracking-widest leading-relaxed text-center">Eyes on the big screen.<br/>The show starts soon.</p></div>}
+          {room.status === 'LOBBY' && <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6"><Users className="w-20 h-20 text-indigo-400 animate-pulse" /><h2 className="text-4xl font-black uppercase italic tracking-tighter">HERE'S MY POINT!</h2><p className="text-indigo-300 font-bold uppercase text-[10px] tracking-widest leading-relaxed text-center uppercase">Connected to Show<br/>Watch the big screen.</p></div>}
           
           {room.status === 'ROUND_INTRO' && <div className="flex-1 flex flex-col items-center justify-center space-y-8 text-center animate-in zoom-in"><div className="bg-indigo-900 p-8 rounded-[2.5rem] border-2 border-indigo-800 shadow-xl w-full"><div className="flex justify-center mb-6 scale-75">{ROUND_DETAILS[room.roundType].icon}</div><h3 className="text-4xl font-black italic mb-3 text-yellow-400 uppercase tracking-tighter">{ROUND_DETAILS[room.roundType].title}</h3><p className="text-indigo-200 text-xs leading-relaxed opacity-70 italic">Get ready to argue...</p></div></div>}
 
@@ -767,7 +767,7 @@ function PlayerView({ room, players, user, joinRoom, startSpeaking, stopSpeaking
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col space-y-6 max-w-full overflow-hidden">
-                   <div className="bg-indigo-900/50 p-6 rounded-[2rem] border border-white/5 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1 leading-none">Currently Defending</p><h3 className="text-lg font-black italic uppercase truncate">"{room.topic}"</h3></div>
+                   <div className="bg-indigo-900/50 p-6 rounded-[2rem] border border-white/5 text-center"><p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1 leading-none uppercase">Currently Defending</p><h3 className="text-lg font-black italic uppercase truncate">"{room.topic}"</h3></div>
                    <form onSubmit={sendHeckle} className="space-y-4">
                       <div className="text-center space-y-2">
                         <p className="text-[10px] font-black text-red-500 uppercase tracking-widest leading-none">Distraction Engine</p>
