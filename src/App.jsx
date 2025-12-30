@@ -26,20 +26,20 @@ import {
   Megaphone, 
   Ghost, 
   Laugh, 
-  ArrowRight,
-  Monitor,
-  Smartphone,
-  Loader2,
-  AlertTriangle,
-  Zap,
-  Swords,
-  MessageSquare,
-  FastForward,
-  RotateCcw,
-  Send,
-  ThumbsUp,
-  ThumbsDown,
-  Sparkles
+  ArrowRight, 
+  Monitor, 
+  Smartphone, 
+  Loader2, 
+  AlertTriangle, 
+  Zap, 
+  Swords, 
+  MessageSquare, 
+  FastForward, 
+  RotateCcw, 
+  Send, 
+  ThumbsUp, 
+  ThumbsDown, 
+  Sparkles 
 } from 'lucide-react';
 
 // --- Firebase Initialization (Rule 1 & Rule 3 Compliance) ---
@@ -152,9 +152,9 @@ export default function App() {
   const [players, setPlayers] = useState([]);
   const [error, setError] = useState('');
   const [playerName, setPlayerName] = useState('');
-  const [lastHeckle, setLastHeckle] = useState(null);
+  const [lastHeckleId, setLastHeckleId] = useState(null);
 
-  // Authentication Sequence
+  // Authentication Sequence (Rule 3)
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -183,8 +183,8 @@ export default function App() {
       if (snap.exists()) {
         const data = snap.data();
         setRoom(data);
-        if (data.lastHeckle?.id !== lastHeckle?.id) {
-          setLastHeckle(data.lastHeckle);
+        if (data.lastHeckle?.id && data.lastHeckle.id !== lastHeckleId) {
+          setLastHeckleId(data.lastHeckle.id);
           if (role === 'host') {
             const randomIndex = Math.floor(Math.random() * AUDIO_FILE_COUNT) + 1;
             new Audio(`/sounds/sound${randomIndex}.mp3`).play().catch(() => {});
@@ -203,9 +203,9 @@ export default function App() {
     });
     
     return () => { unsubRoom(); unsubPlayers(); };
-  }, [roomCode, user, role, lastHeckle]);
+  }, [roomCode, user, role, lastHeckleId]);
 
-  // --- Host Actions ---
+  // --- Actions ---
   const createRoom = async () => {
     if (!user) return;
     try {
@@ -226,6 +226,27 @@ export default function App() {
     }
   };
 
+  const joinRoom = async (e) => {
+    if (e) e.preventDefault();
+    if (!user || roomCode.length < 4) return;
+    try {
+      const code = roomCode.toUpperCase();
+      const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code));
+      if (!snap.exists()) return setError('Room not found. Check the code.');
+      
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code, 'players', user.uid), {
+        uid: user.uid, 
+        name: playerName || `Player ${user.uid.slice(0,3)}`, 
+        score: 0, 
+        hecklesLeft: MAX_HECKLES
+      });
+      setRoomCode(code); 
+      setRole('player');
+    } catch (err) { 
+      setError("Failed to join room."); 
+    }
+  };
+
   const startNextRound = async () => {
     if (!user) return;
     const nextRound = (room.roundNum || 0) + 1;
@@ -234,7 +255,6 @@ export default function App() {
       return updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), { status: 'FINAL_PODIUM' });
     }
 
-    // Prepare a fresh randomized turn order for the entire round
     const shuffledIds = players.map(p => p.uid).sort(() => Math.random() - 0.5);
 
     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), {
@@ -251,7 +271,6 @@ export default function App() {
     const roundType = room.roundType;
     const turnIdx = room.turnIdx || 0;
     
-    // Check if everyone has played this round
     const limit = roundType === 3 ? Math.floor(players.length / 2) : players.length;
     if (turnIdx >= limit) return startNextRound();
 
@@ -267,14 +286,12 @@ export default function App() {
     };
     
     if (roundType === 1 || roundType === 2) {
-      // Single speaker turns
       turnData.currentSpeakerUid = room.roundOrder[turnIdx];
       if (roundType === 2) {
         const others = players.filter(p => p.uid !== turnData.currentSpeakerUid);
         turnData.plantUid = others[Math.floor(Math.random() * others.length)].uid;
       }
     } else {
-      // Pairs for Face-Off
       turnData.currentSpeakerUid = room.roundOrder[turnIdx * 2];
       turnData.opponentUid = room.roundOrder[turnIdx * 2 + 1];
     }
@@ -286,9 +303,7 @@ export default function App() {
     if (!room || !user) return;
     const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
     
-    // Base scoring logic: 1000 base, subtract 100 per second off-target
     let points = Math.max(0, Math.floor(1000 - (Math.abs(30.0 - duration) * 100)));
-    // Bonus for precision
     if (Math.abs(30.0 - duration) <= 0.2) points += 500;
 
     const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode, 'players', room.currentSpeakerUid);
@@ -296,7 +311,6 @@ export default function App() {
     const currentScore = pSnap.exists() ? pSnap.data().score : 0;
 
     if (room.roundType === 3) {
-      // Split timing score in Round 3
       await updateDoc(pRef, { score: currentScore + (points / 2), lastTurnScore: points / 2, lastTurnTime: duration });
       const opRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode, 'players', room.opponentUid);
       const opSnap = await getDoc(opRef);
@@ -311,12 +325,29 @@ export default function App() {
     }
   };
 
+  const restartGame = async () => {
+    if (!user) return;
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
+    await updateDoc(roomRef, { 
+      status: 'LOBBY', 
+      roundNum: 0, 
+      turnIdx: 0, 
+      currentSpeakerUid: null, 
+      opponentUid: null,
+      lastHeckle: null
+    });
+    for (const p of players) {
+      const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode, 'players', p.uid);
+      await updateDoc(pRef, { score: 0, hecklesLeft: MAX_HECKLES });
+    }
+  };
+
   // --- UI Logic ---
   if (authLoading) {
     return (
       <div className="min-h-screen bg-indigo-950 flex flex-col items-center justify-center p-8 text-white space-y-4">
         <Loader2 className="w-12 h-12 text-yellow-400 animate-spin" />
-        <p className="font-bold tracking-widest uppercase text-xs animate-pulse text-indigo-300">Establishing Uplink...</p>
+        <p className="font-bold tracking-widest uppercase text-xs animate-pulse text-indigo-300">Establishing Connection...</p>
       </div>
     );
   }
@@ -335,11 +366,12 @@ export default function App() {
           <div className="grid gap-6">
             <button 
               onClick={createRoom}
-              className="group relative bg-indigo-600 hover:bg-indigo-500 p-8 rounded-[2.5rem] flex items-center justify-between border-b-8 border-indigo-900 transition-all active:translate-y-2 active:border-b-0 shadow-2xl overflow-hidden"
+              disabled={authLoading}
+              className="group relative bg-indigo-600 hover:bg-indigo-500 p-8 rounded-[2.5rem] flex items-center justify-between border-b-8 border-indigo-900 transition-all active:translate-y-2 active:border-b-0 shadow-2xl overflow-hidden disabled:opacity-50"
             >
               <div className="text-left relative z-10">
                 <p className="font-black text-2xl uppercase italic leading-none mb-1">Host Show</p>
-                <p className="text-indigo-300 text-sm font-bold">Project this on the TV</p>
+                <p className="text-indigo-300 text-sm font-bold">Use this on the Big Screen</p>
               </div>
               <Monitor className="w-12 h-12 text-indigo-300 group-hover:text-yellow-400 transition-colors relative z-10" />
             </button>
@@ -349,23 +381,27 @@ export default function App() {
                 <Smartphone className="w-5 h-5" />
                 <p className="font-black uppercase text-[10px] tracking-[0.2em]">Join the Room</p>
               </div>
-              <form onSubmit={(e) => { e.preventDefault(); joinRoom(); }} className="space-y-4 relative z-10">
+              <form onSubmit={joinRoom} className="space-y-4 relative z-10">
                 <input 
                   type="text" 
                   placeholder="ROOM CODE" 
                   maxLength={4} 
-                  className="w-full bg-indigo-950 text-center font-black text-5xl py-4 rounded-3xl uppercase text-white border-2 border-indigo-800 shadow-inner focus:outline-none focus:ring-4 focus:ring-yellow-400 transition-all" 
+                  className="w-full bg-indigo-950 text-center font-black text-5xl py-4 rounded-3xl uppercase text-white border-2 border-indigo-800 shadow-inner focus:outline-none focus:ring-4 focus:ring-yellow-400 transition-all placeholder:opacity-10" 
                   value={roomCode} 
                   onChange={e => setRoomCode(e.target.value)} 
                 />
                 <input 
                   type="text" 
-                  placeholder="NAME" 
+                  placeholder="YOUR NAME" 
                   className="w-full bg-indigo-900 p-5 rounded-2xl font-bold border-2 border-indigo-800 focus:outline-none focus:border-indigo-400 text-indigo-100 uppercase" 
                   value={playerName} 
                   onChange={e => setPlayerName(e.target.value)} 
                 />
-                <button type="submit" className="w-full bg-yellow-400 text-indigo-950 py-6 rounded-[2rem] font-black text-2xl uppercase tracking-tighter shadow-lg hover:bg-yellow-300 transition-colors active:scale-95">
+                <button 
+                  type="submit" 
+                  disabled={authLoading || roomCode.length < 4}
+                  className="w-full bg-yellow-400 text-indigo-950 py-6 rounded-[2rem] font-black text-2xl uppercase tracking-tighter shadow-lg hover:bg-yellow-300 transition-colors active:scale-95 disabled:opacity-50"
+                >
                   Enter Lobby
                 </button>
               </form>
@@ -390,7 +426,7 @@ export default function App() {
       startNextRound={startNextRound} 
       setupTurn={setupTurn} 
       startSpeaking={() => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), { status: 'SPEAKING', startTime: Date.now() })} 
-      lastHeckle={lastHeckle} 
+      lastHeckleId={lastHeckleId} 
       restartGame={restartGame} 
     />
   ) : (
@@ -398,17 +434,15 @@ export default function App() {
       room={room} 
       players={players} 
       user={user} 
-      joinRoom={joinRoom} 
       stopSpeaking={stopSpeaking} 
     />
   );
 }
 
 // --- Host View ---
-function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpeaking, lastHeckle, restartGame }) {
+function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpeaking, restartGame }) {
   const [speakTime, setSpeakTime] = useState(0);
 
-  // Prep Timer Logic
   useEffect(() => {
     let timer;
     const isTopicScreen = room?.status === 'TOPIC_REVEAL';
@@ -424,14 +458,12 @@ function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpe
     return () => clearInterval(timer);
   }, [room?.status, room?.prepCountdown, room?.sneakyWord]);
 
-  // Speaking Clock Logic
   useEffect(() => {
     let speakTimer;
     if (room?.status === 'SPEAKING') {
       speakTimer = setInterval(() => {
         const diff = (Date.now() - room.startTime) / 1000;
         setSpeakTime(diff);
-        // Auto-switch at 15s in Round 3
         if (room.roundType === 3 && diff >= 15 && !room.isSecondHalf) {
           updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), { isSecondHalf: true });
         }
@@ -494,7 +526,7 @@ function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpe
             </div>
             <div className="flex justify-center gap-8 md:gap-16 items-center flex-wrap">
               <div className="space-y-2">
-                <p className="text-indigo-400 uppercase font-black text-[10px] tracking-widest">Active Speaker</p>
+                <p className="text-indigo-400 uppercase font-black text-[10px] tracking-widest">Active Player</p>
                 <div className="text-3xl md:text-5xl font-black text-white uppercase">{speaker?.name}</div>
               </div>
               {room.roundType === 3 && (
@@ -540,12 +572,6 @@ function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpe
                 {room.roundType === 3 && speakTime >= 14 && speakTime <= 16 ? <span className="text-pink-500 animate-bounce block text-8xl">SWITCH!</span> : "Internal Clock Active"}
               </div>
             </div>
-            {lastHeckle && (
-              <div key={lastHeckle.id} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-in zoom-in slide-in-from-bottom-20 duration-300 pointer-events-none z-50 w-full max-w-2xl text-center">
-                <div className="bg-red-500 p-8 md:p-12 rounded-[3rem] text-white font-black text-5xl md:text-8xl shadow-2xl border-8 border-white/20 uppercase italic break-words mx-4">{lastHeckle.text}</div>
-                <p className="mt-6 text-2xl font-bold bg-indigo-950 px-6 py-3 rounded-2xl border-2 border-white/20 shadow-xl inline-block">{lastHeckle.sender}</p>
-              </div>
-            )}
           </div>
         )}
 
@@ -575,7 +601,7 @@ function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpe
 
         {room.status === 'VOTING_VIBE' && (
           <div className="space-y-12 animate-in zoom-in duration-500 w-full max-w-5xl">
-            <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter text-pink-400 leading-none">Vibe Check!</h2>
+            <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter text-pink-400">Vibe Check!</h2>
             <p className="text-2xl text-indigo-300 font-bold uppercase tracking-widest">Who was the master of the mic?</p>
             <div className="flex justify-center gap-6 md:gap-12 flex-wrap">
               <div className="bg-indigo-900/50 p-10 md:p-12 rounded-[3rem] border-4 border-indigo-700 min-w-[280px] md:min-w-[350px]">
@@ -601,18 +627,18 @@ function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpe
 
         {room.status === 'RESULTS' && (
           <div className="space-y-12 animate-in zoom-in w-full overflow-hidden">
-             <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter text-white">Results</h2>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-5xl mx-auto px-4">
-                <div className="bg-indigo-900/50 p-10 md:p-16 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden text-center">
+             <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter text-white">The Scoring</h2>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-5xl mx-auto px-4 text-center">
+                <div className="bg-indigo-900/50 p-10 md:p-16 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden">
                    <p className="text-indigo-400 font-black uppercase text-xl md:text-2xl tracking-widest mb-4">Final Time</p>
                    <p className="text-[6rem] md:text-[10rem] font-black text-yellow-400 leading-none">{(speaker?.lastTurnTime || 0).toFixed(2)}s</p>
                 </div>
-                <div className="bg-indigo-900/50 p-10 md:p-16 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden text-center">
+                <div className="bg-indigo-900/50 p-10 md:p-16 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden">
                    <p className="text-indigo-400 font-black uppercase text-xl md:text-2xl tracking-widest mb-4">Total Gained</p>
                    <p className="text-[6rem] md:text-[10rem] font-black text-white leading-none">+{speaker?.lastTurnScore || 0}</p>
                 </div>
              </div>
-             <button onClick={() => { updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), { turnIdx: room.turnIdx + 1 }); setupTurn(); }} className="bg-yellow-400 text-indigo-950 px-12 md:px-16 py-6 md:py-8 rounded-3xl font-black text-3xl md:text-4xl uppercase shadow-lg active:scale-95 transition-transform">Next Turn</button>
+             <button onClick={() => { updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), { turnIdx: room.turnIdx + 1 }); setupTurn(); }} className="bg-yellow-400 text-indigo-950 px-12 md:px-16 py-6 md:py-8 rounded-3xl font-black text-3xl md:text-4xl uppercase shadow-lg active:scale-95 transition-transform">Keep it Moving</button>
           </div>
         )}
 
@@ -625,7 +651,7 @@ function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpe
                  {sortedWinners.slice(0, 3).map((p, i) => (
                     <div key={p.uid} className={`flex items-center justify-between p-6 md:p-8 rounded-[2.5rem] border-4 backdrop-blur-md shadow-2xl ${i === 0 ? 'bg-yellow-400 text-indigo-950 border-white/50 scale-105' : 'bg-indigo-900 text-white border-indigo-700 opacity-80'}`}>
                        <div className="flex items-center gap-6"><span className="text-4xl md:text-6xl font-black italic opacity-40">#{i+1}</span><span className="text-3xl md:text-5xl font-black uppercase tracking-tighter truncate max-w-[200px]">{p.name}</span></div>
-                       <div className="text-right"><span className="text-3xl md:text-5xl font-black">{p.score}</span><span className="text-[10px] uppercase font-black block tracking-widest">Total Points</span></div>
+                       <div className="text-right"><span className="text-3xl md:text-5xl font-black">{p.score}</span><span className="text-[10px] uppercase font-black block tracking-widest">Points</span></div>
                     </div>
                  ))}
               </div>
@@ -637,11 +663,12 @@ function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpe
         )}
       </div>
 
+      {/* Leaderboard Footer */}
       {room.status !== 'FINAL_PODIUM' && room.status !== 'LOBBY' && (
         <div className="bg-indigo-900 p-6 md:p-8 flex justify-center flex-wrap gap-4 md:gap-8 border-t-4 border-black/20 shadow-2xl max-h-[140px] overflow-hidden shrink-0">
           {players.sort((a,b) => b.score - a.score).map((p, i) => (
-            <div key={p.uid} className="flex items-center gap-4 bg-indigo-950/50 px-5 md:px-6 py-3 rounded-2xl border-2 border-indigo-700 shadow-inner group transition-all">
-              <div className="font-black text-indigo-500 text-2xl italic">#{i+1}</div>
+            <div key={p.uid} className="flex items-center gap-4 bg-indigo-950/50 px-5 md:px-6 py-3 rounded-2xl border-2 border-indigo-700 shadow-inner group">
+              <div className="font-black text-indigo-500 text-2xl italic group-hover:text-yellow-400 transition-colors">#{i+1}</div>
               <div className="text-left leading-tight"><p className="font-black uppercase text-[10px] md:text-xs tracking-tighter truncate max-w-[80px] text-indigo-100 uppercase">{p.name}</p><p className="font-black text-yellow-400 text-xl md:text-2xl leading-none mt-1">{p.score}</p></div>
             </div>
           ))}
@@ -654,7 +681,7 @@ function HostView({ room, players, roomCode, startNextRound, setupTurn, startSpe
 // --- Player View ---
 function PlayerView({ room, players, user, joinRoom, stopSpeaking }) {
   const [playerName, setPlayerName] = useState('');
-  const [roomCode, setRoomCode] = useState('');
+  const [roomCodeInput, setRoomCodeInput] = useState('');
   const [sneakyInput, setSneakyInput] = useState('');
   const [customHeckle, setCustomHeckle] = useState('');
   
@@ -664,21 +691,9 @@ function PlayerView({ room, players, user, joinRoom, stopSpeaking }) {
   const isPlant = room?.plantUid === user?.uid;
 
   const handleStopSpeak = () => stopSpeaking((Date.now() - room.startTime) / 1000);
-  
-  const setSneakyWord = () => { 
-    if (!sneakyInput) return; 
-    updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { sneakyWord: sneakyInput.toUpperCase() }); 
-  };
-  
+  const setSneakyWord = () => { if (!sneakyInput) return; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { sneakyWord: sneakyInput.toUpperCase() }); };
   const castVote = (val) => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { [`votes.${user.uid}`]: val });
-  
-  const sendHeckle = (e) => { 
-    e?.preventDefault(); 
-    if (!customHeckle || (me?.hecklesLeft || 0) <= 0) return; 
-    updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code, 'players', user.uid), { hecklesLeft: me.hecklesLeft - 1 }); 
-    updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { lastHeckle: { id: Math.random().toString(), text: customHeckle.toUpperCase(), sender: me.name } }); 
-    setCustomHeckle(''); 
-  };
+  const sendHeckle = (e) => { e?.preventDefault(); if (!customHeckle || (me?.hecklesLeft || 0) <= 0) return; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code, 'players', user.uid), { hecklesLeft: me.hecklesLeft - 1 }); updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { lastHeckle: { id: Math.random().toString(), text: customHeckle.toUpperCase(), sender: me.name } }); setCustomHeckle(''); };
 
   if (!room) return <div className="min-h-screen bg-indigo-950 flex items-center justify-center p-8"><Loader2 className="w-16 h-16 text-yellow-400 animate-spin" /></div>;
 
@@ -687,31 +702,31 @@ function PlayerView({ room, players, user, joinRoom, stopSpeaking }) {
        <div className="p-4 bg-indigo-900 flex justify-between items-center border-b-2 border-black/20 shadow-md shrink-0">
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center text-indigo-950 font-black shadow-inner">{me?.name?.charAt(0) || '?'}</div><span className="font-black uppercase text-sm truncate max-w-[100px] uppercase">{me?.name}</span></div>
           <div className="flex gap-4">
-             <div className="text-right leading-none border-r border-white/10 pr-4"><p className="text-[10px] uppercase font-black text-indigo-400 mb-1">Ammo</p><div className="flex gap-1">{[...Array(MAX_HECKLES)].map((_, i) => (<div key={i} className={`w-1.5 h-3 rounded-full ${i < (me?.hecklesLeft || 0) ? 'bg-red-500' : 'bg-indigo-950 opacity-30'}`} />))}</div></div>
-             <div className="text-right leading-none"><p className="text-[10px] uppercase font-black text-indigo-400 mb-1">Score</p><p className="text-lg font-black text-yellow-400 tabular-nums">{me?.score || 0}</p></div>
+             <div className="text-right leading-none border-r border-white/10 pr-4"><p className="text-[10px] uppercase font-black text-indigo-400 mb-1 leading-none">Ammo</p><div className="flex gap-1">{[...Array(MAX_HECKLES)].map((_, i) => (<div key={i} className={`w-1.5 h-3 rounded-full ${i < (me?.hecklesLeft || 0) ? 'bg-red-500' : 'bg-indigo-950 opacity-30'}`} />))}</div></div>
+             <div className="text-right leading-none"><p className="text-[10px] uppercase font-black text-indigo-400 mb-1 leading-none">Score</p><p className="text-lg font-black text-yellow-400 tabular-nums">{me?.score || 0}</p></div>
           </div>
        </div>
 
        <div className="flex-1 flex flex-col p-6 overflow-y-auto">
-          {room.status === 'LOBBY' && <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6"><Users className="w-20 h-20 text-indigo-400 animate-pulse" /><h2 className="text-4xl font-black uppercase italic tracking-tighter">HERE'S MY POINT!</h2><p className="text-indigo-300 font-bold uppercase text-[10px] tracking-widest leading-relaxed text-center uppercase">Connected to Show<br/>Eyes on the TV.</p></div>}
+          {room.status === 'LOBBY' && <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6"><Users className="w-20 h-20 text-indigo-400 animate-pulse" /><h2 className="text-4xl font-black uppercase italic tracking-tighter">HERE'S MY POINT!</h2><p className="text-indigo-300 font-bold uppercase text-[10px] tracking-widest leading-relaxed text-center uppercase">Connected to Show<br/>Watch the big screen.</p></div>}
           
-          {room.status === 'ROUND_INTRO' && <div className="flex-1 flex flex-col items-center justify-center space-y-8 text-center animate-in zoom-in"><div className="bg-indigo-900 p-8 rounded-[2.5rem] border-2 border-indigo-800 shadow-xl w-full"><div className="flex justify-center mb-6 scale-75">{ROUND_DETAILS[room.roundType].icon}</div><h3 className="text-4xl font-black italic mb-3 text-yellow-400 uppercase tracking-tighter">{ROUND_DETAILS[room.roundType].title}</h3><p className="text-indigo-200 text-xs leading-relaxed opacity-70 italic">Checking the rules on the big screen...</p></div></div>}
+          {room.status === 'ROUND_INTRO' && <div className="flex-1 flex flex-col items-center justify-center space-y-8 text-center animate-in zoom-in"><div className="bg-indigo-900 p-8 rounded-[2.5rem] border-2 border-indigo-800 shadow-xl w-full"><div className="flex justify-center mb-6 scale-75">{ROUND_DETAILS[room.roundType].icon}</div><h3 className="text-4xl font-black italic mb-3 text-yellow-400 uppercase tracking-tighter">{ROUND_DETAILS[room.roundType].title}</h3><p className="text-indigo-200 text-xs leading-relaxed opacity-70 italic">Watch the TV for round rules!</p></div></div>}
 
           {room.status === 'TOPIC_REVEAL' && (
             <div className="flex-1 flex flex-col items-center justify-center space-y-10 text-center max-w-full">
               {(isSpeaker || (isOpponent && room.roundType === 3)) ? (
                 <>
-                  <div className="bg-yellow-400 text-indigo-950 px-8 py-2 rounded-full font-black uppercase text-[10px] tracking-widest animate-bounce">It's Your Time!</div>
+                  <div className="bg-yellow-400 text-indigo-950 px-8 py-2 rounded-full font-black uppercase text-[10px] tracking-widest animate-bounce">It's Your Show!</div>
                   <h2 className="text-3xl font-black italic text-white leading-tight break-words max-w-full leading-none uppercase">"{room.topic}"</h2>
                   {room.roundType === 2 && room.sneakyWord && <div className="bg-emerald-500/20 p-6 rounded-2xl border-2 border-emerald-500/30 font-black text-xl text-emerald-400 uppercase tracking-tighter">Sneaky Word: {room.sneakyWord}</div>}
                   {isSpeaker && <button onClick={() => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { prepCountdown: 0 })} className="w-full bg-white text-indigo-950 py-10 rounded-[2.5rem] font-black text-4xl uppercase shadow-xl tracking-tighter active:scale-95 transition-all">READY!</button>}
-                  {isOpponent && <div className="p-10 border-4 border-dashed border-indigo-700 rounded-[2.5rem] text-pink-400 font-black uppercase italic">You're up 2nd!<br/><span className="text-xs">Argue the opposite side</span></div>}
+                  {isOpponent && <div className="p-10 border-4 border-dashed border-indigo-700 rounded-[2.5rem] text-pink-400 font-black uppercase italic">You go second!<br/><span className="text-xs uppercase tracking-widest">Defend the opposite side</span></div>}
                 </>
               ) : isPlant && !room.sneakyWord ? (
                 <>
                   <h2 className="text-4xl font-black uppercase italic tracking-tighter text-emerald-400 leading-none">You are<br/>The Plant!</h2>
                   <p className="text-indigo-300 text-sm">Pick a secret word the speaker must use:</p>
-                  <input type="text" maxLength={HECKLE_CHAR_LIMIT} className="w-full bg-indigo-900 p-6 rounded-2xl border-4 border-indigo-800 font-black text-3xl text-center focus:border-emerald-500 text-white uppercase outline-none transition-all" value={sneakyInput} onChange={e => setSneakyInput(e.target.value)} />
+                  <input type="text" maxLength={HECKLE_CHAR_LIMIT} className="w-full bg-indigo-900 p-6 rounded-2xl border-4 border-indigo-800 font-black text-3xl text-center focus:border-emerald-500 text-white uppercase outline-none" value={sneakyInput} onChange={e => setSneakyInput(e.target.value)} />
                   <button onClick={setSneakyWord} className="w-full bg-emerald-500 text-indigo-950 py-6 rounded-[2rem] font-black text-2xl uppercase tracking-tighter shadow-lg active:scale-95">Sabotage!</button>
                 </>
               ) : <div className="bg-indigo-900/50 p-10 rounded-[2rem] border border-white/5 w-full text-center"><p className="text-xl font-black uppercase text-indigo-400 tracking-widest animate-pulse uppercase">Waiting for Setup...</p></div>}
@@ -722,9 +737,9 @@ function PlayerView({ room, players, user, joinRoom, stopSpeaking }) {
             <div className="flex-1 flex flex-col max-w-full">
               {(isSpeaker || isOpponent) ? (
                 <div className="flex-1 flex flex-col items-center justify-center space-y-12">
-                   <div className="text-center space-y-2"><p className="text-yellow-400 font-black uppercase text-[10px] tracking-widest leading-none">Mic is Active</p><h2 className="text-5xl font-black italic uppercase tracking-tighter">{(isOpponent && !room.isSecondHalf) ? 'ON DECK...' : (isSpeaker && room.isSecondHalf) ? 'LISTEN...' : 'DEFEND!'}</h2></div>
+                   <div className="text-center space-y-2"><p className="text-yellow-400 font-black uppercase text-[10px] tracking-widest leading-none">Mic is Active</p><h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none">{(isOpponent && !room.isSecondHalf) ? 'ON DECK...' : (isSpeaker && room.isSecondHalf) ? 'LISTEN...' : 'DEFEND!'}</h2></div>
                    <div className="w-64 h-64 rounded-full border-[16px] border-indigo-900 flex items-center justify-center relative bg-indigo-950 shadow-inner">{(isOpponent && room.isSecondHalf) || (isSpeaker && !room.isSecondHalf) ? <div className="absolute inset-0 rounded-full border-8 border-yellow-400 animate-ping opacity-10"></div> : null}<Mic2 className={`w-20 h-20 text-yellow-400 ${((isSpeaker && !room.isSecondHalf) || (isOpponent && room.isSecondHalf)) ? 'opacity-100 animate-pulse' : 'opacity-10'}`} /></div>
-                   {((room.roundType !== 3 && isSpeaker) || (room.roundType === 3 && isOpponent && room.isSecondHalf)) && (<button onClick={handleStopSpeak} className="w-full bg-red-500 py-12 rounded-[3rem] font-black text-5xl uppercase tracking-tighter shadow-[0_12px_0_rgb(150,0,0)] active:translate-y-3 active:shadow-none transition-all">STOP!</button>)}
+                   {((room.roundType !== 3 && isSpeaker) || (room.roundType === 3 && isOpponent && room.isSecondHalf)) && (<button onClick={handleStopSpeak} className="w-full bg-red-500 py-12 rounded-[3rem] font-black text-5xl uppercase tracking-tighter shadow-[0_12px_0_rgb(150,0,0)] active:translate-y-3 transition-all">STOP!</button>)}
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col space-y-6 max-w-full overflow-hidden">
@@ -752,8 +767,8 @@ function PlayerView({ room, players, user, joinRoom, stopSpeaking }) {
             <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-in zoom-in">
                <h2 className="text-4xl font-black uppercase text-pink-500 italic tracking-tighter leading-none">Vibe Check!</h2>
                <p className="text-center text-indigo-300 font-bold uppercase text-[10px] mb-4 tracking-widest uppercase">Who won the debate?</p>
-               <button onClick={() => castVote(room.currentSpeakerUid)} className="w-full bg-indigo-900 p-10 rounded-[2.5rem] border-4 border-indigo-800 font-black text-2xl uppercase tracking-tighter active:bg-yellow-400 active:text-indigo-950 transition-all shadow-xl uppercase">{players.find(p => p.uid === room.currentSpeakerUid)?.name}</button>
-               <button onClick={() => castVote(room.opponentUid)} className="w-full bg-indigo-900 p-10 rounded-[2.5rem] border-4 border-indigo-800 font-black text-2xl uppercase tracking-tighter active:bg-yellow-400 active:text-indigo-950 transition-all shadow-xl uppercase">{players.find(p => p.uid === room.opponentUid)?.name}</button>
+               <button onClick={() => castVote(room.currentSpeakerUid)} className="w-full bg-indigo-900 p-10 rounded-[2.5rem] border-4 border-indigo-800 font-black text-2xl uppercase tracking-tighter active:bg-yellow-400 active:text-indigo-950 transition-all shadow-xl uppercase leading-none">{players.find(p => p.uid === room.currentSpeakerUid)?.name}</button>
+               <button onClick={() => castVote(room.opponentUid)} className="w-full bg-indigo-900 p-10 rounded-[2.5rem] border-4 border-indigo-800 font-black text-2xl uppercase tracking-tighter active:bg-yellow-400 active:text-indigo-950 transition-all shadow-xl uppercase leading-none">{players.find(p => p.uid === room.opponentUid)?.name}</button>
             </div>
           )}
 
@@ -768,18 +783,3 @@ function PlayerView({ room, players, user, joinRoom, stopSpeaking }) {
     </div>
   );
 }
-
-const restartGame = async () => {
-  // Restarting requires clearing session states and resetting scores
-  const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
-  await updateDoc(roomRef, { 
-    status: 'LOBBY', roundNum: 0, turnIdx: 0, currentSpeakerUid: null, opponentUid: null, lastHeckle: null
-  });
-  // Clear scores for all players in this room
-  // We fetch all players and update them one by one to ensure Rule 2 compliance
-  const playersRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode, 'players');
-  const snap = await getDoc(playersRef);
-  snap.forEach(async (pDoc) => {
-    await updateDoc(pDoc.ref, { score: 0, hecklesLeft: MAX_HECKLES });
-  });
-};
