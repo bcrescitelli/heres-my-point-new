@@ -238,6 +238,68 @@ export default function App() {
     }
   };
 
+  if (!role) {
+    return (
+      <div className="min-h-screen bg-indigo-950 text-white flex flex-col items-center justify-center p-8 font-sans">
+        <div className="max-w-md w-full text-center space-y-12 animate-in fade-in duration-700">
+          <div className="space-y-4">
+            <h1 className="text-6xl font-black italic text-yellow-400 uppercase tracking-tighter drop-shadow-lg transform -rotate-2">
+              Here's My Point!
+            </h1>
+            <p className="text-indigo-400 font-bold uppercase text-sm tracking-[0.3em]">The Unpopular Opinion Game</p>
+          </div>
+
+          <div className="grid gap-6">
+            <button 
+              onClick={createRoom}
+              disabled={authLoading}
+              className="group relative bg-indigo-600 hover:bg-indigo-500 p-8 rounded-[2.5rem] flex items-center justify-between border-b-8 border-indigo-900 transition-all active:translate-y-2 active:border-b-0 shadow-2xl"
+            >
+              <div className="text-left">
+                <p className="font-black text-2xl uppercase italic leading-none mb-1">Host a Game</p>
+                <p className="text-indigo-300 text-sm font-bold">Show on a TV or Monitor</p>
+              </div>
+              <Monitor className="w-12 h-12 text-indigo-300 group-hover:text-yellow-400 transition-colors" />
+            </button>
+
+            <div className="bg-indigo-900/40 p-8 rounded-[2.5rem] border-2 border-indigo-800 backdrop-blur-md space-y-6 text-left shadow-xl">
+              <div className="flex items-center gap-2 text-indigo-300">
+                <Smartphone className="w-5 h-5" />
+                <p className="font-black uppercase text-xs tracking-[0.2em]">Join as a Player</p>
+              </div>
+              <form onSubmit={joinRoom} className="space-y-4">
+                <input 
+                  type="text" 
+                  placeholder="ROOM CODE" 
+                  maxLength={4} 
+                  className="w-full bg-indigo-950 text-center font-black text-5xl py-4 rounded-3xl uppercase text-white border-2 border-indigo-800 shadow-inner focus:outline-none focus:ring-4 focus:ring-yellow-400 transition-all" 
+                  value={roomCode} 
+                  onChange={e => setRoomCode(e.target.value)} 
+                />
+                <input 
+                  type="text" 
+                  placeholder="YOUR NAME" 
+                  className="w-full bg-indigo-900 p-5 rounded-2xl font-bold border-2 border-indigo-800 focus:outline-none focus:border-indigo-400" 
+                  value={playerName} 
+                  onChange={e => setPlayerName(e.target.value)} 
+                />
+                <button type="submit" className="w-full bg-yellow-400 text-indigo-950 py-6 rounded-[2rem] font-black text-2xl uppercase tracking-tighter shadow-lg hover:bg-yellow-300 transition-colors">
+                  Join Lobby
+                </button>
+              </form>
+            </div>
+          </div>
+          {error && (
+            <div className="bg-red-500/20 border border-red-500/50 p-4 rounded-2xl text-red-200 font-bold flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              <p className="text-sm">{error}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return role === 'host' ? (
     <HostView room={room} players={players} roomCode={roomCode} startNextRound={startNextRound} setupTurn={setupTurn} startPrepTimer={startPrepTimer} startSpeaking={startSpeaking} lastHeckle={lastHeckle} />
   ) : (
@@ -496,16 +558,9 @@ function PlayerView({ room, players, user, joinRoom, startSpeaking, stopSpeaking
   if (!room) {
     return (
       <div className="min-h-screen bg-indigo-950 text-white flex flex-col items-center justify-center p-8 font-sans">
-        <div className="w-full max-w-sm space-y-10">
-           <div className="text-center space-y-2">
-             <h1 className="text-5xl font-black italic text-yellow-400 uppercase tracking-tighter drop-shadow-lg">Here's My Point!</h1>
-             <p className="text-indigo-400 font-bold uppercase text-xs tracking-[0.2em]">Remote Controller</p>
-           </div>
-           <form onSubmit={(e) => { e.preventDefault(); joinRoom(e); }} className="space-y-6">
-              <input type="text" placeholder="ROOM CODE" maxLength={4} className="w-full bg-indigo-900 text-center font-black text-6xl py-6 rounded-[2rem] uppercase text-white border-4 border-indigo-800 shadow-inner focus:outline-none focus:ring-4 focus:ring-yellow-400 transition-all" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
-              <input type="text" placeholder="NAME" className="w-full bg-indigo-900 p-5 rounded-2xl font-bold border-2 border-indigo-800 focus:outline-none focus:border-indigo-400" value={playerName} onChange={e => setPlayerName(e.target.value)} />
-              <button type="submit" className="w-full bg-yellow-400 text-indigo-950 py-6 rounded-[2rem] font-black text-3xl uppercase tracking-tighter shadow-xl">Join Lobby</button>
-           </form>
+        <div className="flex flex-col items-center justify-center space-y-8">
+           <Loader2 className="w-12 h-12 text-yellow-400 animate-spin" />
+           <p className="text-indigo-300 font-bold uppercase tracking-widest text-sm">Connecting to Room...</p>
         </div>
       </div>
     );
