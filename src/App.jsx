@@ -8,7 +8,8 @@ import {
   onSnapshot, 
   updateDoc, 
   collection, 
-  serverTimestamp
+  serverTimestamp,
+  runTransaction
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -30,6 +31,8 @@ import {
   RotateCcw, 
   ThumbsUp, 
   ThumbsDown,
+  Music,
+  Play,
   HelpCircle
 } from 'lucide-react';
 
@@ -112,7 +115,7 @@ const TOPICS = [
 const ROUND_DETAILS = {
   1: {
     title: "Solo Standard",
-    description: "Every player takes a turn. Defend your prompt for exactly 30 seconds. Your internal clock is your only guide!",
+    description: "Defend your prompt for exactly 30 seconds. Your internal clock is your only guide!",
     icon: <Mic2 className="w-16 h-16 text-yellow-400" />
   },
   2: {
@@ -132,6 +135,20 @@ const calculatePoints = (duration) => {
   if (Math.abs(30.0 - duration) <= 0.2) score += 500;
   return score;
 };
+
+const Confetti = () => (
+  <div className="absolute inset-0 pointer-events-none overflow-hidden">
+    {[...Array(50)].map((_, i) => (
+      <div key={i} className="animate-confetti absolute w-2 h-2 rounded-full"
+        style={{
+          left: `${Math.random() * 100}%`, top: `-10px`,
+          backgroundColor: ['#fbbf24', '#818cf8', '#f472b6', '#ffffff', '#4ade80'][i % 5],
+          animationDelay: `${Math.random() * 4}s`, animationDuration: `${2 + Math.random() * 3}s`
+        }}
+      />
+    ))}
+  </div>
+);
 
 // --- Main App Logic ---
 export default function App() {
@@ -446,8 +463,8 @@ function HostView({ room, players, roomCode, startSpeaking, activeHeckle, restar
           <div className="space-y-12 animate-in zoom-in duration-500 w-full max-w-5xl overflow-hidden">
             <div className="space-y-4"><p className="text-yellow-400 font-black uppercase tracking-[0.3em] text-xs md:text-sm italic leading-none">The Controversy</p><h2 className="text-5xl md:text-8xl font-black italic leading-tight text-white drop-shadow-lg break-words px-4 leading-none">"{room.topic}"</h2></div>
             <div className="flex justify-center gap-8 md:gap-16 items-center flex-wrap">
-              <div className="space-y-2"><p className="text-indigo-400 font-black text-[10px] tracking-widest leading-none">Active Player</p><div className="text-3xl md:text-5xl font-black text-white uppercase leading-none">{speaker?.name}</div></div>
-              {room.roundType === 3 && (<><Swords className="w-8 h-8 md:w-12 md:h-12 text-pink-500 animate-pulse" /><div className="space-y-2"><p className="text-indigo-400 font-black text-[10px] tracking-widest leading-none">Opponent</p><div className="text-3xl md:text-5xl font-black text-white uppercase leading-none">{opponent?.name}</div></div></>)}
+              <div className="space-y-2"><p className="text-indigo-400 uppercase font-black text-[10px] tracking-widest leading-none">Active Player</p><div className="text-3xl md:text-5xl font-black text-white uppercase leading-none">{speaker?.name}</div></div>
+              {room.roundType === 3 && (<><Swords className="w-8 h-8 md:w-12 md:h-12 text-pink-500 animate-pulse" /><div className="space-y-2"><p className="text-indigo-400 uppercase font-black text-[10px] tracking-widest leading-none">Opponent</p><div className="text-3xl md:text-5xl font-black text-white uppercase leading-none">{opponent?.name}</div></div></>)}
             </div>
             <div className="flex flex-col items-center gap-6">
                {room.roundType === 2 && !room.sneakyWord ? (<div className="bg-emerald-500/10 border-2 border-emerald-500/30 p-8 rounded-[2rem] animate-pulse"><p className="text-emerald-400 font-black uppercase text-xl italic tracking-tighter leading-none">The Plant is choosing the secret word...</p></div>) : (<div className="relative group"><div className="absolute inset-0 bg-yellow-400 blur-2xl opacity-10 animate-pulse"></div><div className="relative bg-indigo-900/50 px-12 py-8 rounded-[3rem] border-2 border-indigo-700 flex flex-col items-center"><p className="text-indigo-400 font-black uppercase text-[10px] mb-2 tracking-[0.3em] leading-none">Preparation Clock</p><p className="text-8xl font-black text-white tabular-nums drop-shadow-glow leading-none">{room.prepCountdown}</p></div></div>)}
@@ -479,7 +496,7 @@ function HostView({ room, players, roomCode, startSpeaking, activeHeckle, restar
         {room.status === 'VOTING_WORD' && (
            <div className="space-y-12 animate-in zoom-in w-full max-w-4xl">
               <h2 className="text-7xl font-black uppercase italic tracking-tighter text-emerald-400 leading-none">Sneaky Check!</h2>
-              <div className="bg-indigo-900 p-12 rounded-[3rem] border-4 border-emerald-600 shadow-2xl space-y-6"><p className="text-indigo-300 font-black tracking-widest leading-none">Secret Word Was:</p><h3 className="text-8xl font-black text-white uppercase italic tracking-tighter leading-none">"{room.sneakyWord}"</h3><p className="text-2xl text-white">Audience: Did they slip it in naturally?</p></div>
+              <div className="bg-indigo-900 p-12 rounded-[3rem] border-4 border-emerald-600 shadow-2xl space-y-6"><p className="text-indigo-300 uppercase font-black tracking-widest leading-none">Secret Word Was:</p><h3 className="text-8xl font-black text-white uppercase italic tracking-tighter leading-none">"{room.sneakyWord}"</h3><p className="text-2xl text-white">Audience: Did they slip it in naturally?</p></div>
               <div className="flex justify-center gap-12">
                  <div className="text-center"><p className="text-8xl font-black text-emerald-400 leading-none">{Object.values(room.votes || {}).filter(v => v === 'YES').length}</p><p className="font-bold uppercase text-xs tracking-widest text-emerald-600">Yes</p></div>
                  <div className="text-center"><p className="text-8xl font-black text-red-400 leading-none">{Object.values(room.votes || {}).filter(v => v === 'NO').length}</p><p className="font-bold uppercase text-xs tracking-widest text-red-600">No</p></div>
@@ -531,13 +548,9 @@ function HostView({ room, players, roomCode, startSpeaking, activeHeckle, restar
         )}
       </div>
 
-      {/* Leaderboard Footer */}
-      {room.status !== 'FINAL_PODIUM' && room.status !== 'LOBBY' && (
-        <div className="bg-indigo-900 p-6 md:p-8 flex justify-center flex-wrap gap-4 md:gap-8 border-t-4 border-black/20 shadow-2xl max-h-[140px] overflow-hidden shrink-0">
-          {players.sort((a,b) => b.score - a.score).map((p, i) => (
-            <div key={p.uid} className="flex items-center gap-4 bg-indigo-950/50 px-5 md:px-6 py-3 rounded-2xl border-2 border-indigo-700 shadow-inner group transition-all"><div className="font-black text-indigo-500 text-2xl italic group-hover:text-yellow-400">#{i+1}</div><div className="text-left leading-tight"><p className="font-black uppercase text-[10px] md:text-xs tracking-tighter truncate max-w-[80px] text-indigo-100 uppercase leading-none">{p.name}</p><p className="font-black text-yellow-400 text-xl md:text-2xl leading-none mt-1">{p.score}</p></div></div>))}
-        </div>
-      )}
+      <div className="bg-indigo-900 p-6 md:p-8 flex justify-center flex-wrap gap-4 md:gap-8 border-t-4 border-black/20 shadow-2xl max-h-[140px] overflow-hidden shrink-0">
+        {players.sort((a,b) => b.score - a.score).map((p, i) => (<div key={p.uid} className="flex items-center gap-4 bg-indigo-950/50 px-5 md:px-6 py-3 rounded-2xl border-2 border-indigo-700 shadow-inner group transition-all"><div className="font-black text-indigo-500 text-2xl italic group-hover:text-yellow-400">#{i+1}</div><div className="text-left leading-tight"><p className="font-black uppercase text-[10px] md:text-xs tracking-tighter truncate max-w-[80px] text-indigo-100 uppercase leading-none">{p.name}</p><p className="font-black text-yellow-400 text-xl md:text-2xl leading-none mt-1">{p.score}</p></div></div>))}
+      </div>
     </div>
   );
 }
@@ -553,7 +566,6 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
   const isOpponent = room?.opponentUid === user?.uid;
   const isPlant = room?.plantUid === user?.uid;
 
-  // Use optional chaining for leader check to prevent crashes
   const sortedByJoined = [...players].sort((a, b) => (a.joinedAt?.seconds || 0) - (b.joinedAt?.seconds || 0));
   const isLeader = sortedByJoined.length > 0 && sortedByJoined[0]?.uid === user?.uid;
 
@@ -600,15 +612,15 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
     }
   };
 
-  if (!room) return <div className="min-h-screen bg-indigo-950 flex items-center justify-center p-8"><Loader2 className="w-16 h-16 text-yellow-400 animate-spin" /></div>;
+  if (!room || !me) return <div className="min-h-screen bg-indigo-950 flex items-center justify-center p-8"><Loader2 className="w-16 h-16 text-yellow-400 animate-spin" /></div>;
 
   return (
-    <div className="min-h-[100dvh] bg-indigo-950 text-white flex flex-col font-sans touch-none select-none overflow-hidden max-w-full uppercase">
+    <div className="min-h-[100dvh] bg-indigo-950 text-white flex flex-col font-sans touch-none select-none overflow-hidden max-w-full uppercase leading-none">
        <div className="p-4 bg-indigo-900 flex justify-between items-center border-b-2 border-black/20 shadow-md shrink-0">
-          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center text-indigo-950 font-black">{me?.name?.charAt(0) || '?'}</div><span className="font-black text-sm truncate max-w-[100px] leading-none">{me?.name}</span></div>
+          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center text-indigo-950 font-black">{me?.name?.charAt(0) || '?'}</div><span className="font-black text-sm truncate max-w-[100px]">{me?.name}</span></div>
           <div className="flex gap-4">
-             <div className="text-right leading-none border-r border-white/10 pr-4"><p className="text-[10px] font-black text-indigo-400 mb-1 uppercase leading-none">Ammo</p><div className="flex gap-0.5">{[...Array(MAX_HECKLES)].map((_, i) => (<div key={i} className={`w-1 h-2 rounded-full ${i < (me?.hecklesLeft || 0) ? 'bg-red-500' : 'bg-indigo-950 opacity-30'}`} />))}</div></div>
-             <div className="text-right leading-none"><p className="text-[10px] font-black text-indigo-400 mb-1 uppercase leading-none">Score</p><p className="text-lg font-black text-yellow-400 tabular-nums leading-none">{me?.score || 0}</p></div>
+             <div className="text-right leading-none border-r border-white/10 pr-4"><p className="text-[10px] font-black text-indigo-400 mb-1 leading-none">Ammo</p><div className="flex gap-0.5">{[...Array(MAX_HECKLES)].map((_, i) => (<div key={i} className={`w-1 h-2 rounded-full ${i < (me?.hecklesLeft || 0) ? 'bg-red-500' : 'bg-indigo-950 opacity-30'}`} />))}</div></div>
+             <div className="text-right leading-none"><p className="text-[10px] font-black text-indigo-400 mb-1 leading-none">Score</p><p className="text-lg font-black text-yellow-400 tabular-nums">{me?.score || 0}</p></div>
           </div>
        </div>
 
@@ -640,10 +652,10 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
               {(isSpeaker || (isOpponent && room.roundType === 3)) ? (
                 <>
                   <div className="bg-yellow-400 text-indigo-950 px-8 py-2 rounded-full font-black uppercase text-[10px] tracking-widest animate-bounce leading-none">Your Turn!</div>
-                  <h2 className="text-3xl font-black italic text-white leading-tight break-words max-w-full leading-none uppercase">"{room.topic}"</h2>
+                  <h2 className="text-3xl font-black italic text-white leading-tight break-words max-w-full leading-none">"{room.topic}"</h2>
                   {room.roundType === 2 && room.sneakyWord && <div className="bg-emerald-500/20 p-6 rounded-2xl border-2 border-emerald-500/30 font-black text-xl text-emerald-400 uppercase tracking-tighter leading-none">Sneaky Word: {room.sneakyWord}</div>}
                   {isSpeaker && <button onClick={() => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { prepCountdown: 0 })} className="w-full bg-white text-indigo-950 py-10 rounded-[2.5rem] font-black text-4xl uppercase shadow-xl tracking-tighter active:scale-95 transition-all leading-none">READY!</button>}
-                  {isOpponent && <div className="p-10 border-4 border-dashed border-indigo-700 rounded-[2.5rem] text-pink-400 font-black uppercase italic leading-none">You go 2nd!<br/><span className="text-xs uppercase tracking-widest leading-none">Defend the opposite side</span></div>}
+                  {isOpponent && <div className="p-10 border-4 border-dashed border-indigo-700 rounded-[2.5rem] text-pink-400 font-black uppercase italic leading-none">You go 2nd!<br/><span className="text-xs uppercase tracking-widest">Defend the opposite side</span></div>}
                 </>
               ) : isPlant && !room.sneakyWord ? (
                 <>
@@ -652,7 +664,7 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
                   <input type="text" maxLength={HECKLE_CHAR_LIMIT} className="w-full bg-indigo-900 p-6 rounded-2xl border-4 border-indigo-800 font-black text-3xl text-center focus:border-emerald-500 text-white outline-none leading-none" value={sneakyInput} onChange={e => setSneakyInput(e.target.value)} />
                   <button onClick={() => { if (!sneakyInput) return; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { sneakyWord: sneakyInput.toUpperCase() }); setSneakyInput(''); }} className="w-full bg-emerald-500 text-indigo-950 py-6 rounded-[2rem] font-black text-2xl uppercase shadow-lg active:scale-95 leading-none">Sabotage!</button>
                 </>
-              ) : <div className="bg-indigo-900/50 p-10 rounded-[2rem] border border-white/5 w-full text-center leading-none"><p className="text-xl font-black uppercase text-indigo-400 tracking-widest animate-pulse leading-none uppercase">Wait for Setup...</p></div>}
+              ) : <div className="bg-indigo-900/50 p-10 rounded-[2rem] border border-white/5 w-full text-center leading-none"><p className="text-xl font-black uppercase text-indigo-400 tracking-widest animate-pulse leading-none">Wait for Setup...</p></div>}
             </div>
           )}
 
@@ -662,15 +674,15 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
                 <div className="flex-1 flex flex-col items-center justify-center space-y-12">
                    <div className="text-center space-y-2 leading-none"><p className="text-yellow-400 font-black uppercase text-[10px] tracking-widest leading-none">Mic is Active</p><h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none">{(isOpponent && !room.isSecondHalf) ? 'ON DECK...' : (isSpeaker && room.isSecondHalf) ? 'WAIT...' : 'DEFEND!'}</h2></div>
                    <div className="w-64 h-64 rounded-full border-[16px] border-indigo-900 flex items-center justify-center relative bg-indigo-950 shadow-inner leading-none">{(isOpponent && room.isSecondHalf) || (isSpeaker && !room.isSecondHalf) ? <div className="absolute inset-0 rounded-full border-8 border-yellow-400 animate-ping opacity-10 leading-none"></div> : null}<Mic2 className={`w-20 h-20 text-yellow-400 ${((isSpeaker && !room.isSecondHalf) || (isOpponent && room.isSecondHalf)) ? 'opacity-100 animate-pulse' : 'opacity-10'}`} /></div>
-                   {((room.roundType !== 3 && isSpeaker) || (room.roundType === 3 && isOpponent && room.isSecondHalf)) && (<button onClick={() => stopSpeaking((Date.now() - room.startTime) / 1000)} className="w-full bg-red-500 py-12 rounded-[3rem] font-black text-5xl uppercase tracking-tighter shadow-[0_12px_0_rgb(150,0,0)] active:translate-y-3 active:shadow-none transition-all leading-none uppercase">STOP!</button>)}
+                   {((room.roundType !== 3 && isSpeaker) || (room.roundType === 3 && isOpponent && room.isSecondHalf)) && (<button onClick={() => stopSpeaking((Date.now() - room.startTime) / 1000)} className="w-full bg-red-500 py-12 rounded-[3rem] font-black text-5xl uppercase tracking-tighter shadow-[0_12px_0_rgb(150,0,0)] active:translate-y-3 active:shadow-none transition-all leading-none">STOP!</button>)}
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col space-y-6 max-w-full overflow-hidden leading-none">
-                   <div className="bg-indigo-900/50 p-4 rounded-[2rem] border border-white/5 text-center leading-none"><p className="text-[10px] font-black text-indigo-400 tracking-widest mb-1 leading-none uppercase">Currently Active</p><h3 className="text-xs font-black italic truncate leading-none opacity-50 leading-none">"{room.topic}"</h3></div>
-                   {room.roundType === 2 && (<form onSubmit={submitQuestion} className="bg-indigo-800/40 p-5 rounded-3xl border border-indigo-600/50 space-y-3 leading-none"><p className="text-[10px] font-black text-indigo-300 tracking-widest text-center leading-none">Interrogation Lab</p><input type="text" placeholder="ASK A QUESTION..." maxLength={50} className="w-full bg-indigo-950 p-4 rounded-2xl border-2 border-indigo-700 outline-none text-sm text-center leading-none" value={questionInput} onChange={e => setQuestionInput(e.target.value)} /><button type="submit" disabled={!questionInput} className="w-full bg-indigo-400 text-indigo-950 py-3 rounded-2xl font-black text-xs leading-none uppercase">SUBMIT QUESTION</button></form>)}
-                   <form onSubmit={sendHeckle} className="space-y-4 leading-none">
+                   <div className="bg-indigo-900/50 p-4 rounded-[2rem] border border-white/5 text-center leading-none"><p className="text-[10px] font-black text-indigo-400 tracking-widest mb-1 leading-none uppercase">Currently Active</p><h3 className="text-xs font-black italic truncate leading-none opacity-50">"{room.topic}"</h3></div>
+                   {room.roundType === 2 && (<form onSubmit={(e) => { e.preventDefault(); if (!questionInput) return; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { questions: [...(room.questions || []), { text: questionInput.toUpperCase(), sender: me.name, id: Math.random().toString() }] }); setQuestionInput(''); }} className="bg-indigo-800/40 p-5 rounded-3xl border border-indigo-600/50 space-y-3 leading-none"><p className="text-[10px] font-black text-indigo-300 tracking-widest text-center">Interrogation Lab</p><input type="text" placeholder="ASK A QUESTION..." maxLength={50} className="w-full bg-indigo-950 p-4 rounded-2xl border-2 border-indigo-700 outline-none text-sm text-center leading-none" value={questionInput} onChange={e => setQuestionInput(e.target.value)} /><button type="submit" disabled={!questionInput} className="w-full bg-indigo-400 text-indigo-950 py-3 rounded-2xl font-black text-xs leading-none">SUBMIT QUESTION</button></form>)}
+                   <form onSubmit={(e) => { e.preventDefault(); if (!customHeckle || (me?.hecklesLeft || 0) <= 0) return; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code, 'players', user.uid), { hecklesLeft: me.hecklesLeft - 1 }); updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { lastHeckle: { id: Math.random().toString(), text: customHeckle.toUpperCase(), sender: me.name } }); setCustomHeckle(''); }} className="space-y-4 leading-none">
                       <div className="text-center space-y-2 leading-none"><p className="text-[10px] font-black text-red-500 tracking-widest leading-none">Distraction Engine</p><input type="text" placeholder="TYPE A HECKLE..." maxLength={HECKLE_CHAR_LIMIT} className="w-full bg-indigo-900 p-6 rounded-[2rem] border-4 border-indigo-800 font-black text-2xl text-center focus:border-red-500 text-white outline-none leading-none" value={customHeckle} onChange={e => setCustomHeckle(e.target.value)} /></div>
-                      <button type="submit" disabled={(me?.hecklesLeft || 0) <= 0 || !customHeckle} className="w-full bg-red-500 text-white p-7 rounded-[2rem] border-b-8 border-red-900 font-black uppercase text-3xl flex items-center justify-center gap-4 active:translate-y-2 active:border-b-0 shadow-xl disabled:opacity-10 leading-none uppercase">FIRE!</button>
+                      <button type="submit" disabled={(me?.hecklesLeft || 0) <= 0 || !customHeckle} className="w-full bg-red-500 text-white p-7 rounded-[2rem] border-b-8 border-red-900 font-black uppercase text-3xl flex items-center justify-center gap-4 active:translate-y-2 active:border-b-0 shadow-xl disabled:opacity-10 leading-none">FIRE!</button>
                    </form>
                    <div className="mt-auto flex justify-center items-center gap-1 leading-none"><p className="text-[10px] font-black text-indigo-400 tracking-widest mr-1 leading-none uppercase">Ammo:</p>{[...Array(MAX_HECKLES)].map((_, i) => (<div key={i} className={`w-2 h-4 rounded-full transition-all duration-300 ${i < (me?.hecklesLeft || 0) ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-indigo-950 opacity-20'}`} />))}</div>
                 </div>
@@ -683,7 +695,7 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
                 <h2 className="text-4xl font-black uppercase text-emerald-400 italic tracking-tighter leading-none">Word Check!</h2>
                 <div className="bg-indigo-900 p-8 rounded-3xl border-2 border-emerald-500/30 w-full text-center font-black text-3xl text-white italic leading-none">"{room.sneakyWord}"</div>
                 <div className="grid grid-cols-2 gap-4 w-full"><button onClick={() => castVote('YES')} className="bg-emerald-500 p-10 rounded-[2rem] font-black text-3xl active:scale-95 shadow-xl leading-none"><ThumbsUp className="w-12 h-12 mx-auto" /></button><button onClick={() => castVote('NO')} className="bg-red-500 p-10 rounded-[2rem] font-black text-3xl active:scale-95 shadow-xl leading-none"><ThumbsDown className="w-12 h-12 mx-auto" /></button></div>
-                {(isSpeaker || isOpponent || isLeader) && <button onClick={handleContinue} className="w-full bg-white text-indigo-950 py-6 rounded-[2rem] font-black text-xl active:scale-95 leading-none uppercase">TALLY VOTES</button>}
+                {(isSpeaker || isOpponent || isLeader) && <button onClick={handleContinue} className="w-full bg-white text-indigo-950 py-6 rounded-[2rem] font-black text-xl active:scale-95 leading-none">TALLY VOTES</button>}
              </div>
           )}
 
