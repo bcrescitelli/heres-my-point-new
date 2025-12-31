@@ -31,8 +31,7 @@ import {
   RotateCcw, 
   ThumbsUp, 
   ThumbsDown,
-  Play,
-  HelpCircle
+  Play
 } from 'lucide-react';
 
 // --- Firebase Initialization (Rule 1 & Rule 3 Compliance) ---
@@ -53,8 +52,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // --- Constants & Data ---
-const AUDIO_FILE_COUNT = 14; 
-const AUDIO_EXT = 'mp3'; // Change to 'wav' if your files are in that format
+const AUDIO_FILE_COUNT = 8; 
+const AUDIO_EXT = 'mp3'; // Stick to mp3 for better reliability
 const MAX_HECKLES = 12;
 const HECKLE_CHAR_LIMIT = 20;
 
@@ -118,8 +117,8 @@ const ROUND_DETAILS = {
     icon: <Mic2 className="w-16 h-16 text-yellow-400" />
   },
   2: {
-    title: "Plant & Interrogation",
-    description: "Secret words AND audience questions. You have 30s to speak and 15s to survive the interrogation!",
+    title: "The Sneaky Word",
+    description: "A secret word is 'Planted' by an audience member. You must work it into your 30s speech naturally for a 300pt bonus!",
     icon: <MessageSquare className="w-16 h-16 text-emerald-400" />
   },
   3: {
@@ -227,7 +226,7 @@ export default function App() {
     }
   }, [role, room?.status]);
 
-  // --- Core Handlers ---
+  // --- Handlers ---
   const createRoom = async () => {
     if (!user) return;
     try {
@@ -261,7 +260,7 @@ export default function App() {
     if (nextRound > 3) return updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), { status: 'FINAL_PODIUM' });
     const shuffledIds = players.map(p => p.uid).sort(() => Math.random() - 0.5);
     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), {
-      status: 'ROUND_INTRO', roundNum: nextRound, roundType: nextRound, turnIdx: 0, roundOrder: shuffledIds, questions: []
+      status: 'ROUND_INTRO', roundNum: nextRound, roundType: nextRound, turnIdx: 0, roundOrder: shuffledIds
     });
   };
 
@@ -270,19 +269,28 @@ export default function App() {
     const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
     const roundType = room.roundType;
     const turnIdx = room.turnIdx || 0;
+    
     let turnData = { 
       status: 'TOPIC_REVEAL', topic: TOPICS[Math.floor(Math.random() * TOPICS.length)], 
       plantUid: null, sneakyWord: null, opponentUid: null, prepCountdown: 10, votes: {},
-      questions: [], chosenQuestion: null, isSecondHalf: false, ghostOpponent: false
+      isSecondHalf: false, ghostOpponent: false
     };
+    
     if (roundType < 3) {
       turnData.currentSpeakerUid = room.roundOrder[turnIdx];
-      if (roundType === 2) turnData.plantUid = players.filter(p => p.uid !== turnData.currentSpeakerUid)[0].uid;
+      if (roundType === 2) {
+        const others = players.filter(p => p.uid !== turnData.currentSpeakerUid);
+        turnData.plantUid = others[Math.floor(Math.random() * others.length)].uid;
+      }
     } else {
       turnData.currentSpeakerUid = room.roundOrder[turnIdx * 2];
       const secondId = room.roundOrder[turnIdx * 2 + 1];
       if (secondId) { turnData.opponentUid = secondId; } 
-      else { turnData.opponentUid = players.find(p => p.uid !== turnData.currentSpeakerUid).uid; turnData.ghostOpponent = true; }
+      else { 
+        const ghost = players.find(p => p.uid !== turnData.currentSpeakerUid);
+        turnData.opponentUid = ghost?.uid || user.uid;
+        turnData.ghostOpponent = true;
+      }
     }
     await updateDoc(roomRef, turnData);
   };
@@ -291,12 +299,15 @@ export default function App() {
     if (!user || !room?.roundOrder) return;
     const nextIdx = (room.turnIdx || 0) + 1;
     const limit = room.roundType === 3 ? Math.ceil(players.length / 2) : players.length;
-    if (nextIdx >= limit) { await startNextRound(); } else {
+
+    if (nextIdx >= limit) {
+      await startNextRound();
+    } else {
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
       let turnData = { 
         status: 'TOPIC_REVEAL', turnIdx: nextIdx, topic: TOPICS[Math.floor(Math.random() * TOPICS.length)], 
         plantUid: null, sneakyWord: null, opponentUid: null, prepCountdown: 10, votes: {},
-        questions: [], chosenQuestion: null, isSecondHalf: false, ghostOpponent: false
+        isSecondHalf: false, ghostOpponent: false
       };
       if (room.roundType < 3) {
         turnData.currentSpeakerUid = room.roundOrder[nextIdx];
@@ -316,6 +327,7 @@ export default function App() {
     const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
     const scoreVal = calculatePoints(duration);
     const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode, 'players', room.currentSpeakerUid);
+    
     if (room.roundType === 3) {
       const split = scoreVal / 2;
       await updateDoc(pRef, { score: increment(split), lastTurnScore: split, lastTurnTime: duration });
@@ -382,7 +394,6 @@ export default function App() {
 // --- Host View Component ---
 function HostView({ room, players, roomCode, startSpeaking, activeHeckle, restartGame }) {
   const [speakTime, setSpeakTime] = useState(0);
-  const [interroTime, setInterroTime] = useState(15);
 
   useEffect(() => {
     let timer;
@@ -404,13 +415,6 @@ function HostView({ room, players, roomCode, startSpeaking, activeHeckle, restar
     } else setSpeakTime(0);
     return () => clearInterval(speakTimer);
   }, [room?.status]);
-
-  useEffect(() => {
-    let qTimer;
-    if (room?.status === 'INTERROGATION' && interroTime > 0) { qTimer = setInterval(() => setInterroTime(t => t - 1), 1000); } 
-    else if (room?.status === 'INTERROGATION' && interroTime === 0) { updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), { status: 'RESULTS' }); }
-    return () => { clearInterval(qTimer); if(room?.status !== 'INTERROGATION') setInterroTime(15); };
-  }, [room?.status, interroTime]);
 
   if (!room) return null;
 
@@ -468,7 +472,7 @@ function HostView({ room, players, roomCode, startSpeaking, activeHeckle, restar
             <div className={`text-6xl md:text-9xl font-black italic mb-20 transition-all drop-shadow-2xl break-words px-4 leading-none ${room.isSecondHalf ? 'text-pink-500 scale-105' : 'text-white'}`}>{room.roundType === 3 && !room.isSecondHalf ? `${speaker?.name}` : room.roundType === 3 ? `${opponent?.name}` : room.topic}</div>
             <div className="flex flex-col items-center gap-12 leading-none">
               <div className="relative w-56 h-56 md:w-72 md:h-72 flex items-center justify-center leading-none"><div className="absolute inset-0 border-8 border-indigo-800 rounded-full leading-none"></div><div className={`absolute inset-0 border-8 border-yellow-400 rounded-full animate-ping opacity-20 leading-none`} style={{ animationDuration: '2s' }}></div><Mic2 className="w-16 h-16 md:w-24 md:h-24 text-yellow-400 drop-shadow-glow leading-none" /></div>
-              <div className="text-3xl md:text-4xl font-black uppercase text-indigo-400 tracking-widest h-20 leading-none">{room.roundType === 3 && speakTime >= 14 && speakTime <= 16 ? <span className="text-pink-500 animate-bounce block text-8xl leading-none">SWITCH!</span> : "Internal Clock Active"}</div>
+              <div className="text-3xl md:text-4xl font-black uppercase text-indigo-400 tracking-widest h-20 leading-none">{room.roundType === 3 && speakTime >= 14 && speakTime <= 16 ? <span className="text-pink-500 animate-bounce block text-8xl">SWITCH!</span> : "Internal Clock Active"}</div>
             </div>
           </div>
         )}
@@ -476,31 +480,19 @@ function HostView({ room, players, roomCode, startSpeaking, activeHeckle, restar
         {activeHeckle && (
           <div key={activeHeckle.id} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-in zoom-in slide-in-from-bottom-20 pointer-events-none z-50 w-full max-w-2xl text-center leading-none">
             <div className="bg-red-500 p-8 md:p-12 rounded-[3rem] text-white font-black text-5xl md:text-8xl shadow-2xl border-8 border-white/20 uppercase italic break-words mx-4 leading-none">{activeHeckle.text}</div>
-            <p className="mt-6 text-2xl font-bold bg-indigo-950 px-6 py-3 rounded-2xl border-2 border-white/20 shadow-xl inline-block leading-none">{activeHeckle.sender}</p>
+            <p className="mt-6 text-2xl font-bold bg-indigo-950 px-6 py-3 rounded-2xl border-2 border-white/20 shadow-xl inline-block leading-none uppercase">{activeHeckle.sender}</p>
           </div>
         )}
 
         {room.status === 'VOTING_WORD' && (
            <div className="space-y-12 animate-in zoom-in w-full max-w-4xl leading-none">
               <h2 className="text-7xl font-black uppercase italic tracking-tighter text-emerald-400 leading-none">Sneaky Check!</h2>
-              <div className="bg-indigo-900 p-12 rounded-[3rem] border-4 border-emerald-600 shadow-2xl space-y-6 leading-none"><p className="text-indigo-300 uppercase font-black tracking-widest leading-none">Secret Word Was:</p><h3 className="text-8xl font-black text-white uppercase italic tracking-tighter leading-none">"{room.sneakyWord}"</h3><p className="text-2xl text-white leading-none">Audience: Did they slip it in naturally?</p></div>
+              <div className="bg-indigo-900 p-12 rounded-[3rem] border-4 border-emerald-600 shadow-2xl space-y-6 leading-none"><p className="text-indigo-300 uppercase font-black tracking-widest leading-none">Secret Word Was:</p><h3 className="text-8xl font-black text-white uppercase italic tracking-tighter leading-none">"{room.sneakyWord}"</h3><p className="text-2xl text-white">Audience: Did they slip it in naturally?</p></div>
               <div className="flex justify-center gap-12 leading-none">
                  <div className="text-center leading-none"><p className="text-8xl font-black text-emerald-400 leading-none">{Object.values(room.votes || {}).filter(v => v === 'YES').length}</p><p className="font-bold uppercase text-xs tracking-widest text-emerald-600 leading-none">Yes</p></div>
                  <div className="text-center leading-none"><p className="text-8xl font-black text-red-400 leading-none">{Object.values(room.votes || {}).filter(v => v === 'NO').length}</p><p className="font-bold uppercase text-xs tracking-widest text-red-600 leading-none">No</p></div>
               </div>
            </div>
-        )}
-
-        {room.status === 'INTERROGATION' && (
-          <div className="space-y-12 animate-in zoom-in w-full max-w-5xl leading-none">
-            <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter text-indigo-400 leading-none">Interrogation!</h2>
-            <div className="bg-white text-indigo-950 p-12 rounded-[4rem] shadow-2xl border-b-[16px] border-indigo-200 leading-none">
-               <p className="text-xs uppercase font-black tracking-[0.4em] mb-4 text-indigo-400 leading-none">Audience Question</p>
-               <h3 className="text-6xl font-black italic leading-tight leading-none uppercase">"{room.chosenQuestion?.text}"</h3>
-               <p className="mt-4 text-sm font-bold uppercase tracking-widest leading-none">— asked by {room.chosenQuestion?.sender}</p>
-            </div>
-            <p className="text-[12rem] font-black leading-none tabular-nums text-yellow-400 animate-pulse leading-none">{interroTime}</p>
-          </div>
         )}
 
         {room.status === 'VOTING_VIBE' && (
@@ -515,10 +507,10 @@ function HostView({ room, players, roomCode, startSpeaking, activeHeckle, restar
 
         {room.status === 'RESULTS' && (
           <div className="space-y-12 animate-in zoom-in w-full overflow-hidden text-center leading-none">
-             <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter text-white leading-none">The Scoring</h2>
+             <h2 className="text-6xl md:text-8xl font-black uppercase italic tracking-tighter text-white">The Scoring</h2>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-5xl mx-auto px-4 text-center leading-none">
-                <div className="bg-indigo-900/50 p-10 md:p-16 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden text-center leading-none"><p className="text-indigo-400 font-black uppercase text-xl md:text-2xl tracking-widest mb-4 leading-none">Final Time</p><p className="text-[6rem] md:text-[10rem] font-black text-yellow-400 leading-none">{(speaker?.lastTurnTime || 0).toFixed(2)}s</p></div>
-                <div className="bg-indigo-900/50 p-10 md:p-16 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden text-center leading-none"><p className="text-indigo-400 font-black uppercase text-xl md:text-2xl tracking-widest mb-4 leading-none">Points Gained</p><p className="text-[6rem] md:text-[10rem] font-black text-white leading-none">+{speaker?.lastTurnScore || 0}</p></div>
+                <div className="bg-indigo-900/50 p-10 md:p-16 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden text-center"><p className="text-indigo-400 font-black uppercase text-xl md:text-2xl tracking-widest mb-4 leading-none">Final Time</p><p className="text-[6rem] md:text-[10rem] font-black text-yellow-400 leading-none">{(speaker?.lastTurnTime || 0).toFixed(2)}s</p></div>
+                <div className="bg-indigo-900/50 p-10 md:p-16 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden text-center"><p className="text-indigo-400 font-black uppercase text-xl md:text-2xl tracking-widest mb-4 leading-none">Points Gained</p><p className="text-[6rem] md:text-[10rem] font-black text-white leading-none">+{speaker?.lastTurnScore || 0}</p></div>
              </div>
              <p className="text-2xl font-black uppercase text-yellow-400 italic animate-pulse leading-none mt-8 leading-none">Speaker controls the show...</p>
           </div>
@@ -542,10 +534,9 @@ function HostView({ room, players, roomCode, startSpeaking, activeHeckle, restar
   );
 }
 
-// --- Player View Component ---
+// --- Player View ---
 function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame, startNextRound }) {
   const [sneakyInput, setSneakyInput] = useState('');
-  const [questionInput, setQuestionInput] = useState('');
   const [customHeckle, setCustomHeckle] = useState('');
   
   const me = players.find(p => p.uid === user?.uid);
@@ -568,16 +559,6 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
           const winRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code, 'players', room.currentSpeakerUid);
           await updateDoc(winRef, { score: increment(300), lastTurnScore: increment(300) });
        }
-       const qList = room.questions || [];
-       if (qList.length > 0) {
-         updateDoc(roomRef, { status: 'INTERROGATION', chosenQuestion: qList[Math.floor(Math.random() * qList.length)], votes: {} });
-       } else { updateDoc(roomRef, { status: 'RESULTS' }); }
-    } else if (room.status === 'INTERROGATION') {
-       const votes = Object.values(room.votes || {});
-       if (votes.filter(v => v === 'SMOOTH').length > votes.filter(v => v === 'RATTLED').length) {
-         const winRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code, 'players', room.currentSpeakerUid);
-         await updateDoc(winRef, { score: increment(200), lastTurnScore: increment(200) });
-       }
        updateDoc(roomRef, { status: 'RESULTS' });
     } else if (room.status === 'VOTING_VIBE') {
        const votes = Object.values(room.votes || {});
@@ -590,15 +571,15 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
     }
   };
 
-  if (!room || !me) return <div className="min-h-screen bg-indigo-950 flex items-center justify-center p-8 uppercase"><Loader2 className="w-16 h-16 text-yellow-400 animate-spin" /></div>;
+  if (!room || !me) return <div className="min-h-screen bg-indigo-950 flex items-center justify-center p-8 uppercase leading-none"><Loader2 className="w-16 h-16 text-yellow-400 animate-spin" /></div>;
 
   return (
     <div className="min-h-[100dvh] bg-indigo-950 text-white flex flex-col font-sans touch-none select-none overflow-hidden max-w-full uppercase leading-none">
-       <div className="p-4 bg-indigo-900 flex justify-between items-center border-b-2 border-black/20 shadow-md shrink-0">
-          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center text-indigo-950 font-black">{me?.name?.charAt(0) || '?'}</div><span className="font-black text-sm truncate max-w-[100px] leading-none">{me?.name}</span></div>
-          <div className="flex gap-4">
-             <div className="text-right leading-none border-r border-white/10 pr-4"><p className="text-[10px] font-black text-indigo-400 mb-1 leading-none uppercase">Ammo</p><div className="flex gap-0.5 leading-none">{[...Array(MAX_HECKLES)].map((_, i) => (<div key={i} className={`w-1 h-2 rounded-full ${i < (me?.hecklesLeft || 0) ? 'bg-red-500' : 'bg-indigo-950 opacity-30'}`} />))}</div></div>
-             <div className="text-right leading-none"><p className="text-[10px] font-black text-indigo-400 mb-1 leading-none uppercase">Score</p><p className="text-lg font-black text-yellow-400 tabular-nums leading-none">{me?.score || 0}</p></div>
+       <div className="p-4 bg-indigo-900 flex justify-between items-center border-b-2 border-black/20 shadow-md shrink-0 leading-none">
+          <div className="flex items-center gap-3 leading-none"><div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center text-indigo-950 font-black leading-none">{me?.name?.charAt(0) || '?'}</div><span className="font-black text-sm truncate max-w-[100px] leading-none">{me?.name}</span></div>
+          <div className="flex gap-4 leading-none">
+             <div className="text-right leading-none border-r border-white/10 pr-4 leading-none"><p className="text-[10px] font-black text-indigo-400 mb-1 leading-none uppercase leading-none">Ammo</p><div className="flex gap-0.5 leading-none">{[...Array(MAX_HECKLES)].map((_, i) => (<div key={i} className={`w-1 h-2 rounded-full ${i < (me?.hecklesLeft || 0) ? 'bg-red-500' : 'bg-indigo-950 opacity-30'} leading-none`} />))}</div></div>
+             <div className="text-right leading-none leading-none"><p className="text-[10px] font-black text-indigo-400 mb-1 leading-none uppercase leading-none">Score</p><p className="text-lg font-black text-yellow-400 tabular-nums leading-none">{me?.score || 0}</p></div>
           </div>
        </div>
 
@@ -633,14 +614,14 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
                   <h2 className="text-3xl font-black italic text-white leading-tight break-words max-w-full leading-none uppercase">"{room.topic}"</h2>
                   {room.roundType === 2 && room.sneakyWord && <div className="bg-emerald-500/20 p-6 rounded-2xl border-2 border-emerald-500/30 font-black text-xl text-emerald-400 uppercase tracking-tighter leading-none leading-none">Sneaky Word: {room.sneakyWord}</div>}
                   {isSpeaker && <button onClick={() => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { prepCountdown: 0 })} className="w-full bg-white text-indigo-950 py-10 rounded-[2.5rem] font-black text-4xl uppercase shadow-xl tracking-tighter active:scale-95 transition-all leading-none uppercase">READY!</button>}
-                  {isOpponent && <div className="p-10 border-4 border-dashed border-indigo-700 rounded-[2.5rem] text-pink-400 font-black uppercase italic leading-none">You go 2nd!<br/><span className="text-xs uppercase tracking-widest leading-none">Defend the opposite side</span></div>}
+                  {isOpponent && <div className="p-10 border-4 border-dashed border-indigo-700 rounded-[2.5rem] text-pink-400 font-black uppercase italic leading-none uppercase">You go 2nd!<br/><span className="text-xs uppercase tracking-widest leading-none">Defend the opposite side</span></div>}
                 </>
               ) : isPlant && !room.sneakyWord ? (
                 <>
                   <h2 className="text-4xl font-black uppercase italic tracking-tighter text-emerald-400 leading-none leading-none">You are<br/>The Plant!</h2>
-                  <p className="text-indigo-300 text-sm italic leading-none leading-none">Pick a secret word the speaker must use:</p>
+                  <p className="text-indigo-300 text-sm italic leading-none leading-none uppercase">Pick a secret word the speaker must use:</p>
                   <input type="text" maxLength={HECKLE_CHAR_LIMIT} className="w-full bg-indigo-900 p-6 rounded-2xl border-4 border-indigo-800 font-black text-3xl text-center focus:border-emerald-500 text-white outline-none leading-none leading-none" value={sneakyInput} onChange={e => setSneakyInput(e.target.value)} />
-                  <button onClick={() => { if (!sneakyInput) return; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { sneakyWord: sneakyInput.toUpperCase() }); setSneakyInput(''); }} className="w-full bg-emerald-500 text-indigo-950 py-6 rounded-[2rem] font-black text-2xl uppercase tracking-tighter shadow-lg active:scale-95 leading-none uppercase leading-none">Sabotage!</button>
+                  <button onClick={() => { if (!sneakyInput) return; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { sneakyWord: sneakyInput.toUpperCase() }); setSneakyInput(''); }} className="w-full bg-emerald-500 text-indigo-950 py-6 rounded-[2rem] font-black text-2xl uppercase shadow-lg active:scale-95 leading-none uppercase leading-none">Sabotage!</button>
                 </>
               ) : <div className="bg-indigo-900/50 p-10 rounded-[2rem] border border-white/5 w-full text-center leading-none leading-none"><p className="text-xl font-black uppercase text-indigo-400 tracking-widest animate-pulse leading-none uppercase leading-none">Wait for Setup...</p></div>}
             </div>
@@ -650,16 +631,15 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
             <div className="flex-1 flex flex-col max-w-full leading-none">
               {(isSpeaker || isOpponent) ? (
                 <div className="flex-1 flex flex-col items-center justify-center space-y-12 leading-none">
-                   <div className="text-center space-y-2 leading-none leading-none"><p className="text-yellow-400 font-black uppercase text-[10px] tracking-widest leading-none uppercase leading-none">Mic is Active</p><h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none leading-none">{(isOpponent && !room.isSecondHalf) ? 'ON DECK...' : (isSpeaker && room.isSecondHalf) ? 'WAIT...' : 'DEFEND!'}</h2></div>
+                   <div className="text-center space-y-2 leading-none leading-none"><p className="text-yellow-400 font-black uppercase text-[10px] tracking-widest leading-none uppercase leading-none uppercase">Mic is Active</p><h2 className="text-5xl font-black italic uppercase tracking-tighter leading-none leading-none">{(isOpponent && !room.isSecondHalf) ? 'ON DECK...' : (isSpeaker && room.isSecondHalf) ? 'WAIT...' : 'DEFEND!'}</h2></div>
                    <div className="w-64 h-64 rounded-full border-[16px] border-indigo-900 flex items-center justify-center relative bg-indigo-950 shadow-inner leading-none leading-none">{(isOpponent && room.isSecondHalf) || (isSpeaker && !room.isSecondHalf) ? <div className="absolute inset-0 rounded-full border-8 border-yellow-400 animate-ping opacity-10 leading-none leading-none"></div> : null}<Mic2 className={`w-20 h-20 text-yellow-400 ${((isSpeaker && !room.isSecondHalf) || (isOpponent && room.isSecondHalf)) ? 'opacity-100 animate-pulse' : 'opacity-10'} leading-none`} /></div>
                    {((room.roundType !== 3 && isSpeaker) || (room.roundType === 3 && isOpponent && room.isSecondHalf)) && (<button onClick={() => stopSpeaking((Date.now() - room.startTime) / 1000)} className="w-full bg-red-500 py-12 rounded-[3rem] font-black text-5xl uppercase tracking-tighter shadow-[0_12px_0_rgb(150,0,0)] active:translate-y-3 active:shadow-none transition-all leading-none uppercase leading-none">STOP!</button>)}
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col space-y-6 max-w-full overflow-hidden leading-none leading-none">
-                   <div className="bg-indigo-900/50 p-4 rounded-[2rem] border border-white/5 text-center leading-none leading-none"><p className="text-[10px] font-black text-indigo-400 tracking-widest mb-1 leading-none uppercase leading-none uppercase">Currently Active</p><h3 className="text-xs font-black italic truncate leading-none opacity-50 leading-none leading-none">"{room.topic}"</h3></div>
-                   {room.roundType === 2 && (<form onSubmit={(e) => { e.preventDefault(); if (!questionInput) return; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { questions: [...(room.questions || []), { text: questionInput.toUpperCase(), sender: me.name, id: Math.random().toString() }] }); setQuestionInput(''); }} className="bg-indigo-800/40 p-5 rounded-3xl border border-indigo-600/50 space-y-3 leading-none leading-none"><p className="text-[10px] font-black text-indigo-300 tracking-widest text-center leading-none leading-none">Interrogation Lab</p><input type="text" placeholder="ASK A QUESTION..." maxLength={50} className="w-full bg-indigo-950 p-4 rounded-2xl border-2 border-indigo-700 outline-none text-sm text-center leading-none leading-none" value={questionInput} onChange={e => setQuestionInput(e.target.value)} /><button type="submit" disabled={!questionInput} className="w-full bg-indigo-400 text-indigo-950 py-3 rounded-2xl font-black text-xs leading-none uppercase leading-none">SUBMIT QUESTION</button></form>)}
+                   <div className="bg-indigo-900/50 p-4 rounded-[2rem] border border-white/5 text-center leading-none leading-none"><p className="text-[10px] font-black text-indigo-400 tracking-widest mb-1 leading-none uppercase leading-none uppercase uppercase">Currently Active</p><h3 className="text-xs font-black italic truncate leading-none opacity-50 leading-none leading-none">"{room.topic}"</h3></div>
                    <form onSubmit={(e) => { e.preventDefault(); if (!customHeckle || (me?.hecklesLeft || 0) <= 0) return; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code, 'players', user.uid), { hecklesLeft: increment(-1) }); updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.code), { lastHeckle: { id: Math.random().toString(), text: customHeckle.toUpperCase(), sender: me.name } }); setCustomHeckle(''); }} className="space-y-4 leading-none leading-none">
-                      <div className="text-center space-y-2 leading-none leading-none"><p className="text-[10px] font-black text-red-500 tracking-widest leading-none leading-none">Distraction Engine</p><input type="text" placeholder="TYPE A HECKLE..." maxLength={HECKLE_CHAR_LIMIT} className="w-full bg-indigo-900 p-6 rounded-[2rem] border-4 border-indigo-800 font-black text-2xl text-center focus:border-red-500 text-white outline-none leading-none leading-none" value={customHeckle} onChange={e => setCustomHeckle(e.target.value)} /></div>
+                      <div className="text-center space-y-2 leading-none leading-none"><p className="text-[10px] font-black text-red-500 tracking-widest leading-none leading-none uppercase">Distraction Engine</p><input type="text" placeholder="TYPE A HECKLE..." maxLength={HECKLE_CHAR_LIMIT} className="w-full bg-indigo-900 p-6 rounded-[2rem] border-4 border-indigo-800 font-black text-2xl text-center focus:border-red-500 text-white outline-none leading-none leading-none" value={customHeckle} onChange={e => setCustomHeckle(e.target.value)} /></div>
                       <button type="submit" disabled={(me?.hecklesLeft || 0) <= 0 || !customHeckle} className="w-full bg-red-500 text-white p-7 rounded-[2rem] border-b-8 border-red-900 font-black uppercase text-3xl flex items-center justify-center gap-4 active:translate-y-2 active:border-b-0 shadow-xl disabled:opacity-10 leading-none uppercase leading-none">FIRE!</button>
                    </form>
                    <div className="mt-auto flex justify-center items-center gap-1 leading-none leading-none"><p className="text-[10px] font-black text-indigo-400 tracking-widest mr-1 leading-none uppercase leading-none">Ammo:</p>{[...Array(MAX_HECKLES)].map((_, i) => (<div key={i} className={`w-2 h-4 rounded-full transition-all duration-300 ${i < (me?.hecklesLeft || 0) ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-indigo-950 opacity-20'} leading-none`} />))}</div>
@@ -672,18 +652,9 @@ function PlayerView({ room, players, user, stopSpeaking, setupTurn, advanceGame,
              <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-in zoom-in leading-none leading-none">
                 <h2 className="text-4xl font-black uppercase text-emerald-400 italic tracking-tighter leading-none leading-none">Word Check!</h2>
                 <div className="bg-indigo-900 p-8 rounded-3xl border-2 border-emerald-500/30 w-full text-center font-black text-3xl text-white italic leading-none uppercase leading-none">"{room.sneakyWord}"</div>
-                <div className="grid grid-cols-2 gap-4 w-full leading-none"><button onClick={() => castVote('YES')} className="bg-emerald-500 p-10 rounded-[2rem] font-black text-3xl active:scale-95 shadow-xl leading-none leading-none"><ThumbsUp className="w-12 h-12 mx-auto leading-none" /></button><button onClick={() => castVote('NO')} className="bg-red-500 p-10 rounded-[2rem] font-black text-3xl active:scale-95 shadow-xl leading-none leading-none"><ThumbsDown className="w-12 h-12 mx-auto leading-none" /></button></div>
+                <div className="grid grid-cols-2 gap-4 w-full leading-none"><button onClick={() => castVote('YES')} className="bg-emerald-500 p-10 rounded-[2rem] font-black text-3xl active:scale-95 shadow-xl leading-none leading-none"><ThumbsUp className="w-12 h-12 mx-auto leading-none" /></button><button onClick={() => castVote('NO')} className="bg-red-500 p-10 rounded-[2rem] font-black text-3xl active:scale-95 shadow-xl leading-none leading-none"><ThumbsDown className="w-12 h-12 mx-auto" /></button></div>
                 {(isSpeaker || isOpponent || isLeader) && <button onClick={handleContinue} className="w-full bg-white text-indigo-950 py-6 rounded-[2rem] font-black text-xl active:scale-95 leading-none uppercase leading-none">TALLY VOTES</button>}
              </div>
-          )}
-
-          {room.status === 'INTERROGATION' && (
-            <div className="flex-1 flex flex-col items-center justify-center space-y-6 animate-in zoom-in leading-none leading-none">
-               <h2 className="text-4xl font-black uppercase text-indigo-400 italic tracking-tighter leading-none text-center leading-none leading-none">Verdict!</h2>
-               <button onClick={() => castVote('SMOOTH')} className="w-full bg-indigo-500 p-8 rounded-[2.5rem] border-4 border-indigo-400 font-black text-2xl active:bg-yellow-400 shadow-xl leading-none leading-none leading-none">SMOOTH (+200)</button>
-               <button onClick={() => castVote('RATTLED')} className="w-full bg-red-900 p-8 rounded-[2.5rem] border-4 border-red-800 font-black text-2xl active:bg-red-500 shadow-xl leading-none leading-none leading-none">RATTLED</button>
-               {(isSpeaker || isOpponent || isLeader) && <button onClick={handleContinue} className="w-full bg-white text-indigo-950 py-6 rounded-[2rem] font-black text-xl active:scale-95 mt-4 leading-none uppercase leading-none">Finish Verdict</button>}
-            </div>
           )}
 
           {room.status === 'VOTING_VIBE' && (
