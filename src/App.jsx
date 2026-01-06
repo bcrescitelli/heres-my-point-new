@@ -54,8 +54,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // --- Constants & Data ---
-const AUDIO_FILE_COUNT = 5; 
-const AUDIO_EXT = 'mp3'; 
+const AUDIO_FILE_COUNT = 18; 
+const AUDIO_EXT = 'mp3', 'm4a'; 
 const MAX_HECKLES = 12;
 const HECKLE_CHAR_LIMIT = 20;
 
