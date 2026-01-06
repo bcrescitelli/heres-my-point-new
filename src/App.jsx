@@ -53,7 +53,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // --- Constants & Data ---
-const AUDIO_FILE_COUNT = 5; 
+const AUDIO_FILE_COUNT = 18; 
 const MAX_HECKLES = 12;
 const HECKLE_CHAR_LIMIT = 20;
 const AUDIO_GAIN_VALUE = 1.5; // 150% volume boost
